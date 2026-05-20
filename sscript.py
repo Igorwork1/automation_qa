@@ -9,6 +9,8 @@ import zlib
 from datetime import datetime
 from urllib.request import urlopen
 
+from pydantic import BaseModel, ValidationError, field_validator
+
 COLUMN_HEADERS = ["ФИО", "Возраст", "Адрес", "Дата"]
 TABLE_TITLE = "ТАБЛИЦА ДАННЫХ"
 EXPECTED_DATA_CRC = "0x2c083a45"
@@ -48,6 +50,18 @@ def preprocess_date(date_str: str) -> str:
     return dt.strftime(f"%Y-%m-%d {time_part}")
 
 
+class TextLine(BaseModel):
+    fio: str
+    age: int
+    address: str
+    birth_date: str
+
+    @field_validator("birth_date", mode="before")
+    @classmethod
+    def validate_birth_date(cls, value: str) -> str:
+        return preprocess_date(value)
+
+
 # ФУНКЦИЯ для аргументов
 def arg_parse():
     parser = argparse.ArgumentParser(description="Test automation_qa")
@@ -73,18 +87,18 @@ def crc32_read(path: str) -> str:
     return format(crc & 0xFFFFFFFF, "#010x")
 
 
-def parse_line(line: str) -> list:
+def parse_line(line: str) -> TextLine:
     parts = line.strip().split("\t")
 
     if len(parts) != 4:
         raise ValueError(f"Некорректное количество полей: {len(parts)}")
 
-    return [
-        parts[0].strip(),
-        parts[1].strip(),
-        parts[2].strip(),
-        preprocess_date(parts[3].strip()),
-    ]
+    return TextLine(
+        fio=parts[0].strip(),
+        age=parts[1].strip(),
+        address=parts[2].strip(),
+        birth_date=parts[3].strip(),
+    )
 
 
 def text_cropping(text: str, width: int) -> str: # тут по Тз, как-то красиво обрезать текст
@@ -176,11 +190,16 @@ def print_table(source: str) -> None:
         if not line.strip():
             continue
         try:
-            row = parse_line(line)
-        except ValueError:
+            person = parse_line(line)
+        except (ValidationError, ValueError):
             continue
 
-        print(format_row(row, widths))
+        print(
+            format_row(
+                [person.fio, str(person.age), person.address, person.birth_date],
+                widths,
+            )
+        )
 
 
 def configure_stdout() -> None:
